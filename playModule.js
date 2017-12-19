@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 var player_1 = require("./player");
 var move_1 = require("./move");
+var macroParser_1 = require("./macroParser");
 var playModule = (function () {
     function playModule(inputModule, outputModule) {
         var _this = this;
@@ -14,13 +15,24 @@ var playModule = (function () {
         this.outputHandler = outputModule;
         this.inputHandler.addListener(function (from, message) {
             if (message[0] == "!")
-                _this.voteForMove(from, message.slice(1));
+                _this.parseCommand(from, message.slice(1));
         });
+        this.specialCommands["join"] = function (st, player) {
+            _this.inputHandler.say("welcome #" + player.name + " !");
+        };
         this.specialCommands["screen"] = function () {
             _this.outputHandler.keyboardStream.write("screencap");
             setTimeout(function () {
                 _this.inputHandler.sendImage("./current.jpg");
             }, 1500);
+        };
+        this.specialCommands["macro"] = function (st, player) {
+            player.currentMacro = undefined;
+            player.currentMacro = new macroParser_1.default(function (move) { return _this.parseCommand(player.name, move, true); }, function (move) {
+                return _this.currentMoves[move] ||
+                    _this.specialCommands[move];
+            }).parse(st.slice(1).join(" "));
+            player.currentMacro.playNextMove();
         };
         this.specialCommands["autoscreen"] = function (st) {
             if (st[1] == "on") {
@@ -59,23 +71,32 @@ var playModule = (function () {
         this.totalPower -= p.power;
         delete this.players[aPlayer];
     };
-    playModule.prototype.voteForMove = function (aPlayer, aMove) {
-        var parts = aMove.split(" ");
-        aMove = parts[0];
-        var m = this.currentMoves[aMove];
+    playModule.prototype.parseCommand = function (aPlayer, aCommand, isMacro) {
+        var parts = aCommand.split(" ");
+        aCommand = parts[0];
+        var m = this.currentMoves[aCommand];
         var p = this.players[aPlayer];
-        if (!m) {
-            if (this.specialCommands[aMove]) {
-                this.specialCommands[aMove](parts);
-            }
-            return;
+        if (!isMacro) {
+            if (!p)
+                p = this.join(aPlayer);
+            p.lastActive = (new Date()).getTime();
         }
-        if (!p)
-            p = this.join(aPlayer);
-        p.lastActive = (new Date()).getTime();
-        if (m.popularity.indexOf(aPlayer) == -1)
+        if (p) {
+            if (!m) {
+                if (this.specialCommands[aCommand]) {
+                    if (isMacro && aCommand == "macro")
+                        return;
+                    this.specialCommands[aCommand](parts, p);
+                }
+                return;
+            }
+            this.voteForMove(p, m, aCommand);
+        }
+    };
+    playModule.prototype.voteForMove = function (p, m, aMove) {
+        if (m.popularity.indexOf(p.name) == -1)
             for (var i = 0; i < p.power; ++i)
-                m.popularity.push(aPlayer);
+                m.popularity.push(p.name);
         if (m.popularity.length > this.totalPower * m.threshold) {
             this.inputHandler.say("doing " + aMove);
             this.doMove(m);
@@ -95,11 +116,17 @@ var playModule = (function () {
             setTimeout(function () { return _this.specialCommands["screen"](); }, 500);
         setTimeout(function () {
             _this.inputHandler.say(_this.outputHandler.getStoryText());
-            _this.currentMoves = _this.outputHandler.getActionList();
+            var currentMoves = _this.outputHandler.getActionList();
             var moves = "";
-            for (var move in _this.currentMoves)
+            for (var move in currentMoves)
                 moves += "!" + move + ", ";
-            _this.inputHandler.say("available moves: " + moves.slice(0, -2));
+            _this.inputHandler.say("available moves: " + moves.slice(0, -2)).then(function () {
+                _this.currentMoves = currentMoves;
+                for (var p in _this.players)
+                    if (_this.players[p].currentMacro)
+                        if (!_this.players[p].currentMacro.playNextMove())
+                            _this.players[p].currentMacro = undefined;
+            });
         }, 2000);
     };
     return playModule;

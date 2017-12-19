@@ -22,7 +22,7 @@ var outputModule = (function () {
         this.keyboardStream = inputHandlerP.stdin;
         this.fileHandle = new tail.Tail("C:/Users/nem-e/AppData/Roaming/Macromedia/Flash Player/Logs/flashlog.txt");
         this.fileHandle.on("line", function (d) {
-            _this.rawLog += d;
+            _this.rawLog += d + "\n";
         });
     }
     outputModule.prototype.getStoryText = function () {
@@ -59,18 +59,31 @@ var outputModule = (function () {
     outputModule.prototype.process = function () {
         var match;
         while (match = outputModule.textPattern.exec(this.rawLog)) {
-            this.stringBuffer += match[1] + "\n";
+            for (var _i = 0, _a = outputModule.enhancementPatterns; _i < _a.length; _i++) {
+                var pattern = _a[_i];
+                match[1] = match[1].replace(pattern, "");
+            }
+            this.stringBuffer += match[1];
         }
         while (match = outputModule.actionPattern.exec(this.rawLog)) {
             if (!match[2])
-                this.actionBuffer[match[3].split(" ")[0].toLowerCase()] = new move_1.default(this.parseMove(parseInt(match[1])));
+                this.actionBuffer[match[3].split("(")[0]
+                    .replace(" ", "-")
+                    .slice(0, -1)
+                    .toLowerCase()] = new move_1.default(this.parseMove(parseInt(match[1])));
         }
-        this.actionBuffer["save"] = new move_1.default("{F2}1");
-        this.actionBuffer["load"] = new move_1.default("{F7}1");
+        if (this.actionBuffer["camp-actions"]) {
+            this.actionBuffer["save"] = new move_1.default("{F2}1");
+            this.actionBuffer["load"] = new move_1.default("{F7}1");
+            this.actionBuffer["level"] = new move_1.default("l");
+        }
         this.rawLog = "";
     };
-    outputModule.textPattern = /<\?mainview (.*?) mainview\?>/g;
-    outputModule.actionPattern = /<\?action([0-9]+?)( !disabled)? (.+?) action[0-9]+\?>/g;
+    outputModule.textPattern = /<\?mainview ([\s\S]*?) mainview\?>/g;
+    outputModule.actionPattern = /<\?action([0-9]+?)( !disabled)? ([\s\S]+?) action[0-9]+\?>/g;
+    outputModule.enhancementPatterns = [
+        /<\/?font.*?>/g
+    ];
     return outputModule;
 }());
 exports.default = outputModule;

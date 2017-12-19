@@ -28,11 +28,34 @@ export default class inputModule
     public say(msg: string)
     {
         let part = msg.split("\n");
+        let realParts = [""];
+        let i = 0;
+        if (part.length > 1) {
+            for (let p of part) {
+                let concat = realParts[i] + "\r\n" + p;
+                if (p.length >= 5000) {
+                    let parag = p.split(".");
+                    realParts.push(parag.slice(0, parag.length / 4).join("."));
+                    realParts.push(parag.slice(parag.length / 4 + 1, parag.length / 2).join("."));
+                    realParts.push(parag.slice(parag.length / 2 + 1, 3 * parag.length / 4).join("."));
+                    realParts.push(parag.slice(3 * parag.length / 4 + 1).join("."));
+                }
+                else if (concat.length < 5000)
+                    realParts[i] = concat;
+                else {
+                    ++i;
+                    realParts.push(p);
+                }
+            }
+            part = realParts;
+        }
+        let last;
         for (let i = 0; i < part.length; ++i) {
             let bk = breakdance(part[i]);
             if (bk != "")
-                this.channel.send(bk + "\n");
+               last = this.channel.send(bk);
         }
+        return last;
     }
 
     public addListener(fn: any)

@@ -2,6 +2,7 @@ import Player from "./player"
 import Move from "./move"
 import inputModule from "./inputModule.twitch"
 import outputModule from "./outputModule.CoC"
+import macroParser from "./macroParser"
 
 export default class playModule {
     private players: {[key: string]: Player} = {};    
@@ -10,6 +11,7 @@ export default class playModule {
 
     private totalPower: number = 0;
     private autoscreen: boolean = false;
+
 
     private inputHandler;
     private outputHandler;
@@ -20,14 +22,29 @@ export default class playModule {
         this.outputHandler = outputModule;
 
         this.inputHandler.addListener((from, message) => {
-            if (message[0] == "!") this.voteForMove(from, message.slice(1));
+            if (message[0] == "!") this.parseCommand(from, message.slice(1));
         });
+
+        this.specialCommands["join"] = (st: string[], player: Player) => {
+            this.inputHandler.say("welcome #" + player.name + " !");
+        }
 
         this.specialCommands["screen"] = () => {
             this.outputHandler.keyboardStream.write("screencap");
             setTimeout(() => {
                 this.inputHandler.sendImage("./current.jpg");
             }, 1500);
+        }
+
+        this.specialCommands["macro"] = (st: string[], player: Player) => {
+            player.currentMacro = undefined;
+            player.currentMacro = new macroParser(
+                (move) => this.parseCommand(player.name, move, true), 
+                (move) => 
+                    this.currentMoves[move] ||
+                    this.specialCommands[move]
+            ).parse(st.slice(1).join(" "));
+            player.currentMacro.playNextMove();
         }
 
         this.specialCommands["autoscreen"] = (st) => {
@@ -74,28 +91,39 @@ export default class playModule {
         delete this.players[aPlayer];
     }
 
-    public voteForMove(aPlayer: string, aMove: string)
+    public parseCommand(aPlayer: string, aCommand: string, isMacro?: boolean)
     {
-        let parts = aMove.split(" ");
-        aMove = parts[0];
-        let m = this.currentMoves[aMove];
+        let parts = aCommand.split(" ");
+        aCommand = parts[0];
+        let m = this.currentMoves[aCommand];
         let p = this.players[aPlayer];
-        if (!m) 
-        {
-            if (this.specialCommands[aMove])
-            {
-                this.specialCommands[aMove](parts);
-            }
-            return;
+
+        if (!isMacro) {
+            if (!p) p = this.join(aPlayer); 
+            p.lastActive = (new Date()).getTime();
         }
-
-        if (!p) p = this.join(aPlayer);
+        if (p) {
+            if (!m) 
+            {
+                if (this.specialCommands[aCommand])
+                {
+                    if (isMacro && aCommand == "macro")
+                        return;
+                    this.specialCommands[aCommand](parts, p);
+                }
+                return;
+            }
         
-        p.lastActive = (new Date()).getTime();
+            this.voteForMove(p, m, aCommand);
+        }
+    }
 
-        if (m.popularity.indexOf(aPlayer) == -1)
+    public voteForMove(p: Player, m: Move, aMove: string)
+    {
+
+        if (m.popularity.indexOf(p.name) == -1)
             for (var i = 0; i < p.power; ++i)
-                m.popularity.push(aPlayer);
+                m.popularity.push(p.name);
         
         
         if (m.popularity.length > this.totalPower * m.threshold) {
@@ -120,13 +148,19 @@ export default class playModule {
         
         setTimeout(() => {
             this.inputHandler.say(this.outputHandler.getStoryText());
-            this.currentMoves = this.outputHandler.getActionList();
+            let currentMoves = this.outputHandler.getActionList();
 
             let moves = "";
-            for (let move in this.currentMoves)
+            for (let move in currentMoves)
                 moves += "!" + move + ", ";
 
-            this.inputHandler.say("available moves: " + moves.slice(0, -2));
+            this.inputHandler.say("available moves: " + moves.slice(0, -2)).then(() => {
+                this.currentMoves = currentMoves;
+                for (let p in this.players)
+                    if (this.players[p].currentMacro)
+                        if (!this.players[p].currentMacro.playNextMove())
+                            this.players[p].currentMacro = undefined;
+            });
         }, 2000);
     }
 }

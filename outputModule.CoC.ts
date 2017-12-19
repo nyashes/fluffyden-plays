@@ -10,9 +10,12 @@ export default class outputModule
     private stringBuffer: string = "";
     private actionBuffer: any = {};
 
-    private static textPattern: RegExp = /<\?mainview (.*?) mainview\?>/g
-    private static actionPattern: RegExp = /<\?action([0-9]+?)( !disabled)? (.+?) action[0-9]+\?>/g
+    private static textPattern: RegExp = /<\?mainview ([\s\S]*?) mainview\?>/g
+    private static actionPattern: RegExp = /<\?action([0-9]+?)( !disabled)? ([\s\S]+?) action[0-9]+\?>/g
 
+    private static enhancementPatterns: RegExp[] = [
+        /<\/?font.*?>/g
+    ];
     public keyboardStream: any;
 
     public constructor()
@@ -24,7 +27,7 @@ export default class outputModule
         this.fileHandle = new tail.Tail("C:/Users/nem-e/AppData/Roaming/Macromedia/Flash Player/Logs/flashlog.txt");
 
         this.fileHandle.on("line", (d: string) => {
-            this.rawLog += d;
+            this.rawLog += d + "\n";
         });
     }
 
@@ -73,17 +76,28 @@ export default class outputModule
         let match;
         while (match = outputModule.textPattern.exec(this.rawLog))
         {
-            this.stringBuffer += match[1] + "\n";
+            for (let pattern of outputModule.enhancementPatterns)
+                match[1] = (match[1] as string).replace(pattern, "");
+            this.stringBuffer += match[1];
         }
 
         while (match = outputModule.actionPattern.exec(this.rawLog))
         {
             if (!match[2])
-                this.actionBuffer[match[3].split(" ")[0].toLowerCase()] = new Move(this.parseMove(parseInt(match[1])));
+                this.actionBuffer[
+                    (match[3] as string).split("(")[0]
+                    .replace(" ", "-")
+                    .slice(0, -1)
+                    .toLowerCase()
+                ] = new Move(this.parseMove(parseInt(match[1])));
         }
 
-        this.actionBuffer["save"] = new Move("{F2}1");
-        this.actionBuffer["load"] = new Move("{F7}1");
+        if (this.actionBuffer["camp-actions"])
+        {
+            this.actionBuffer["save"] = new Move("{F2}1");
+            this.actionBuffer["load"] = new Move("{F7}1");
+            this.actionBuffer["level"] = new Move("l");
+        }
 
         this.rawLog = "";
     }
